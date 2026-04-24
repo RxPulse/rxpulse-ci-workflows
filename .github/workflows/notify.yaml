@@ -1,0 +1,157 @@
+name: notify
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: true
+        type: string
+      branch:
+        required: false
+        type: string
+        default: "N/A"
+      image-tag:
+        required: false
+        type: string
+        default: "N/A"
+      actor:
+        required: false
+        type: string
+        default: "N/A"
+      commit-message:
+        required: false
+        type: string
+        default: "N/A"
+      commit-sha:
+        required: false
+        type: string
+        default: "N/A"
+      run-url:
+        required: false
+        type: string
+        default: "N/A"
+      result-sonar-snyk:
+        type: string
+        default: "skipped"
+      result-build:
+        type: string
+        default: "skipped"
+      result-trivy:
+        type: string
+        default: "skipped"
+      result-push:
+        type: string
+        default: "skipped"
+      result-helm-dev:
+        type: string
+        default: "skipped"
+      result-approval:
+        type: string
+        default: "skipped"
+      result-helm-prod:
+        type: string
+        default: "skipped"
+    secrets:
+      SMTP_HOST:
+        required: true
+      SMTP_PORT:
+        required: true
+      SMTP_USERNAME:
+        required: true
+      SMTP_PASSWORD:
+        required: true
+      NOTIFY_FROM_EMAIL:
+        required: true
+      NOTIFY_TO_EMAIL:
+        required: true
+
+jobs:
+  notify:
+    name: notify
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Determine overall pipeline status
+        id: pipeline-status
+        run: |
+          RESULTS=(
+            "${{ inputs.result-sonar-snyk }}"
+            "${{ inputs.result-build }}"
+            "${{ inputs.result-trivy }}"
+            "${{ inputs.result-push }}"
+            "${{ inputs.result-helm-dev }}"
+            "${{ inputs.result-approval }}"
+            "${{ inputs.result-helm-prod }}"
+          )
+
+          OVERALL="SUCCESS"
+          for RESULT in "${RESULTS[@]}"; do
+            if [ "$RESULT" = "failure" ] || [ "$RESULT" = "cancelled" ]; then
+              OVERALL="FAILED"
+              break
+            fi
+          done
+
+          echo "overall=${OVERALL}" >> $GITHUB_OUTPUT
+
+      - name: Build failure summary
+        id: summary
+        run: |
+          FAILED_JOBS=""
+
+          if [ "${{ inputs.result-sonar-snyk }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| sonarqube / snyk | FAILED |\n"
+          fi
+          if [ "${{ inputs.result-build }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| build image | FAILED |\n"
+          fi
+          if [ "${{ inputs.result-trivy }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| trivy | FAILED — CRITICAL CVEs detected, push blocked |\n"
+          fi
+          if [ "${{ inputs.result-push }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| push | FAILED |\n"
+          fi
+          if [ "${{ inputs.result-helm-dev }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| helm update (dev) | FAILED |\n"
+          fi
+          if [ "${{ inputs.result-approval }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| prod approval gate | FAILED |\n"
+          fi
+          if [ "${{ inputs.result-helm-prod }}" == "failure" ]; then
+            FAILED_JOBS="${FAILED_JOBS}| helm update (prod) | FAILED |\n"
+          fi
+
+          echo "failed_jobs<<EOF" >> $GITHUB_OUTPUT
+          printf "$FAILED_JOBS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send pipeline notification email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[RxPulse CI/CD] ${{ steps.pipeline-status.outputs.overall }} — rxpulse-${{ inputs.service-name }} @ ${{ inputs.branch }}"
+          to: ${{ secrets.NOTIFY_TO_EMAIL }}
+          from: "RxPulse CI/CD <${{ secrets.NOTIFY_FROM_EMAIL }}>"
+          body: |
+            RxPulse CI/CD Pipeline: ${{ steps.pipeline-status.outputs.overall }}
+
+            Service       : rxpulse-${{ inputs.service-name }}
+            Branch        : ${{ inputs.branch }}
+            Image Tag     : ${{ inputs.image-tag }}
+            Actor         : ${{ inputs.actor }}
+            Commit SHA    : ${{ inputs.commit-sha }}
+            Commit Message: ${{ inputs.commit-message }}
+
+            Stage Results:
+            - SonarCloud & Snyk       : ${{ inputs.result-sonar-snyk }}
+            - Build Image             : ${{ inputs.result-build }}
+            - Trivy Scan              : ${{ inputs.result-trivy }}
+            - Push to DockerHub       : ${{ inputs.result-push }}
+            - Helm Update (Dev)       : ${{ inputs.result-helm-dev }}
+            - Production Approval Gate: ${{ inputs.result-approval }}
+            - Helm Update (Prod)      : ${{ inputs.result-helm-prod }}
+
+            Run URL: ${{ inputs.run-url }}

@@ -1,0 +1,79 @@
+name: push-image
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+      tag-exists:
+        description: "Whether the git tag already exists (from build-image output)"
+        required: false
+        type: string
+        default: "false"
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+
+    outputs:
+      push-result:
+        description: "push job result"
+        value: ${{ jobs.push.outputs.result }}
+      tag:
+        description: "The image tag that was pushed"
+        value: ${{ jobs.push.outputs.tag }}
+
+jobs:
+  push:
+    name: push
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ job.status }}
+      tag:    ${{ inputs.image-tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-rxpulse-${{ inputs.service-name }}
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load -i /tmp/image.tar
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push versioned image
+        run: |
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/rxpulse-${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          LOADED_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n1)
+          docker tag "$LOADED_IMAGE" "$IMAGE_TAG"
+          docker push "$IMAGE_TAG"
+
+      - name: Tag and push latest (main only)
+        if: github.ref_name == 'main'
+        run: |
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/rxpulse-${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          IMAGE_LATEST="${{ secrets.DOCKERHUB_USERNAME }}/rxpulse-${{ inputs.service-name }}:latest"
+          docker tag $IMAGE_TAG $IMAGE_LATEST
+          docker push $IMAGE_LATEST
+
+      - name: Create and push git tag (main only, if not exists)
+        if: github.ref_name == 'main' && inputs.tag-exists != 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag ${{ inputs.image-tag }}
+          git push origin ${{ inputs.image-tag }}
