@@ -182,7 +182,7 @@ jobs:
 
       - name: Trivy scan
         id: trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.35.0
         continue-on-error: true
         with:
           image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/rxpulse-${{ inputs.service-name }}:${{ needs.generate-tag.outputs.tag }}
