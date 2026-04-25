@@ -53,7 +53,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=rxpulse-${{ inputs.service-name }}
-            -Dsonar.projectName=RxPulse ${{ inputs.service-name }}
+            -Dsonar.projectName=rxpulse-${{ inputs.service-name }}
             -Dsonar.sources=src
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
