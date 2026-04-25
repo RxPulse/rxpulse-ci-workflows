@@ -41,9 +41,9 @@ jobs:
         id: select-file
         run: |
           if [ "${{ inputs.target-branch }}" = "main" ]; then
-            FILE="environments/values-prod.yaml"
+            FILE="environments/prod/values.yaml"
           else
-            FILE="environments/values-dev.yaml"
+            FILE="environments/dev/values.yaml"
           fi
           echo "Using values file: ${FILE}"
           echo "file=${FILE}" >> $GITHUB_OUTPUT
