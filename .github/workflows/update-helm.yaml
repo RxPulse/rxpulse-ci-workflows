@@ -55,8 +55,8 @@ jobs:
             echo "ERROR: $FILE not found in rxpulse-helmcharts (${{ inputs.target-branch }} branch)"
             exit 1
           fi
-          echo "Before:"
-          grep -A 3 "^${{ inputs.service-name }}:" "$FILE" || true
+          echo "Before update:"
+          grep -A 5 "^    ${{ inputs.service-name }}:" "$FILE" || true
 
       - name: Update image tag in values file
         run: |
@@ -64,15 +64,15 @@ jobs:
           SERVICE="${{ inputs.service-name }}"
           NEW_TAG="${{ inputs.image-tag }}"
 
+          # Navigate: global > services > <service> > tag
           awk -v service="$SERVICE" -v newtag="$NEW_TAG" '
-            BEGIN { in_service=0; in_image=0 }
-            /^[a-z]/ {
-              in_service = ($0 ~ "^" service ":")
-              in_image = 0
+            BEGIN { in_global=0; in_services=0; in_service=0 }
+            /^global:/         { in_global=1 }
+            in_global && /^  services:/ { in_services=1 }
+            in_services && /^    [a-z]/ {
+              in_service = ($0 ~ "^    " service ":")
             }
-            in_service && /^  image:/ { in_image=1 }
-            in_service && /^  [a-z]/ && !/^  image:/ { in_image=0 }
-            in_service && in_image && /^    tag:/ {
+            in_service && /^      tag:/ {
               sub(/tag: .*/, "tag: " newtag)
             }
             { print }
@@ -80,8 +80,8 @@ jobs:
 
           mv "$FILE.tmp" "$FILE"
 
-          echo "After:"
-          grep -A 3 "^${{ inputs.service-name }}:" "$FILE"
+          echo "After update:"
+          grep -A 4 "^    ${{ inputs.service-name }}:" "$FILE"
 
       - name: Commit and push
         run: |
